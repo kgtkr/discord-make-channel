@@ -119,9 +119,10 @@ client.on("message", async (message) => {
       await message.react("👍");
     } else if (cmd.payload.type === "list") {
       await message.reply(
-        filterManageChannel(cmd.category.children.array())
-          .map((channel, i) => `${i}: ${channel.name}`)
-          .join("\n")
+        "\n" +
+          filterManageChannel(cmd.category.children.array())
+            .map((channel, i) => `${i}: ${channel.name}`)
+            .join("\n")
       );
     } else {
       const channelQuery = cmd.payload.channels;
@@ -212,7 +213,11 @@ client.on("raw" as any, async (packet) => {
       parent: cmd.category,
     });
 
-    await channel.updateOverwrite(channel.guild.roles.everyone, {
+    await createChannel.createOverwrite(client.user!.id, {
+      VIEW_CHANNEL: true,
+    });
+
+    await createChannel.updateOverwrite(channel.guild.roles.everyone, {
       VIEW_CHANNEL: false,
     });
 
@@ -223,7 +228,7 @@ client.on("raw" as any, async (packet) => {
         .filter((user) => !user.bot)
         .map((user) => user.id),
     ])) {
-      await channel.createOverwrite(user, {
+      await createChannel.createOverwrite(user, {
         VIEW_CHANNEL: true,
       });
     }
