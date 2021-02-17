@@ -143,10 +143,16 @@ client.on("message", async (message) => {
           await permission.delete();
         }
 
-        if (cmd.payload.type === "join" && permission === undefined) {
-          await channel.createOverwrite(message.author.id, {
-            VIEW_CHANNEL: true,
-          });
+        if (cmd.payload.type === "join") {
+          if (permission === undefined) {
+            await channel.createOverwrite(message.author.id, {
+              VIEW_CHANNEL: true,
+            });
+          } else {
+            await channel.updateOverwrite(message.author.id, {
+              VIEW_CHANNEL: true,
+            });
+          }
         }
       }
     }
