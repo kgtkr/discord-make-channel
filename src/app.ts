@@ -1,23 +1,32 @@
 import * as Discord from "discord.js";
 import * as fs from "fs";
 
-function getNameAndCategory(
-  message: Discord.Message
-): {
-  category: Discord.CategoryChannel;
-  name: string;
-} | null {
-  if (
-    !(
-      message.channel instanceof Discord.TextChannel &&
-      message.channel.topic !== null &&
-      message.channel.topic.includes("<make-channel>")
-    )
-  ) {
-    return null;
-  }
+type CmdPayload =
+  | {
+      type: "create";
+      name: string;
+    }
+  | {
+      type: "join";
+      channels: Array<number | string>;
+    }
+  | { type: "leave"; channels: Array<number | string> }
+  | { type: "list" };
 
-  if (message.channel.parent === null) {
+type Cmd = {
+  category: Discord.CategoryChannel;
+  userId: string;
+  payload: CmdPayload;
+};
+
+function msgToCmd(message: Discord.Message): Cmd | null {
+  if (
+    !(message.channel instanceof Discord.TextChannel) ||
+    message.channel.topic === null ||
+    !message.channel.topic.includes("<make-channel>") ||
+    message.channel.parent === null ||
+    message.author.bot
+  ) {
     return null;
   }
 
@@ -26,22 +35,72 @@ function getNameAndCategory(
     return null;
   }
 
+  const arr = message.content
+    .split(/[\s　\,]/g)
+    .map((x) => x.trim())
+    .filter((x) => x.length !== 0);
+  if (arr.length < 2) {
+    return null;
+  }
+
+  const [expectMention, ...cmds] = arr;
+
   const botMention = `<@!${botUser.id}>`;
 
-  if (!message.content.startsWith(botMention)) {
+  if (expectMention !== botMention) {
     return null;
   }
 
-  const name = message.content.slice(botMention.length).trim().toLowerCase();
-
-  if (!(0 < name.length && name.length <= 15)) {
-    return null;
+  let payload: CmdPayload | null = null;
+  if ((cmds[0] === "join" || cmds[0] === "leave") && cmds.length >= 2) {
+    payload = {
+      type: cmds[0],
+      channels: cmds.slice(1).map((x) => {
+        const n = Number.parseInt(x);
+        if (Number.isNaN(n)) {
+          return x;
+        } else {
+          return n;
+        }
+      }),
+    };
+  } else if (cmds[0] === "list") {
+    payload = {
+      type: "list",
+    };
+  } else if (cmds.length === 1) {
+    payload = {
+      type: "create",
+      name: cmds[0],
+    };
   }
 
-  return {
-    category: message.channel.parent,
-    name,
-  };
+  if (payload !== null) {
+    return {
+      category: message.channel.parent,
+      userId: message.author.id,
+      payload,
+    };
+  } else {
+    return null;
+  }
+}
+
+function filterManageChannel(
+  channels: Discord.GuildChannel[]
+): Discord.TextChannel[] {
+  return channels
+    .map((channel) => {
+      if (
+        channel instanceof Discord.TextChannel &&
+        (channel.topic === null || !channel.topic.includes("<make-channel>"))
+      ) {
+        return channel;
+      } else {
+        return null;
+      }
+    })
+    .filter((x): x is Discord.TextChannel => x !== null);
 }
 
 const client = new Discord.Client();
@@ -50,11 +109,41 @@ client.on("ready", () => {});
 
 client.on("message", async (message) => {
   try {
-    if (getNameAndCategory(message) === null) {
+    const cmd = msgToCmd(message);
+
+    if (cmd === null) {
       return;
     }
 
-    await message.react("👍");
+    if (cmd.payload.type === "create") {
+      await message.react("👍");
+    } else if (cmd.payload.type === "list") {
+    } else {
+      const channelQuery = cmd.payload.channels;
+      const channels = filterManageChannel(
+        cmd.category.children.array()
+      ).filter((channel, i) =>
+        channelQuery.some((query) =>
+          typeof query === "number" ? i === query : channel.name.includes(query)
+        )
+      );
+
+      for (const channel of new Set(channels)) {
+        const permission = channel.permissionOverwrites.find(
+          (x) => x.type === "member" || x.id === message.author.id
+        );
+
+        if (cmd.payload.type === "leave" && permission !== undefined) {
+          await permission.delete();
+        }
+
+        if (cmd.payload.type === "join" && permission === undefined) {
+          await channel.createOverwrite(message.author.id, {
+            VIEW_CHANNEL: true,
+          });
+        }
+      }
+    }
   } catch (e) {
     console.error(e);
   }
@@ -87,10 +176,11 @@ client.on("raw" as any, async (packet) => {
 
     const message = await channel.messages.fetch(data.message_id);
 
-    const info = getNameAndCategory(message);
-    if (info === null) {
+    const cmd = msgToCmd(message);
+    if (cmd === null || cmd.payload.type !== "create") {
       return;
     }
+    const cmdPayload = cmd.payload;
 
     const reaction = message.reactions.cache
       .array()
@@ -106,16 +196,32 @@ client.on("raw" as any, async (packet) => {
 
     const already = channel.guild.channels.cache
       .array()
-      .find((channel) => channel.name === info.name);
+      .find((channel) => channel.name === cmdPayload.name);
 
     if (already !== undefined) {
       return;
     }
 
-    const createChannel = await channel.guild.channels.create(info.name, {
+    const createChannel = await channel.guild.channels.create(cmdPayload.name, {
       type: "text",
-      parent: info.category,
+      parent: cmd.category,
     });
+
+    await channel.updateOverwrite(channel.guild.roles.everyone, {
+      VIEW_CHANNEL: false,
+    });
+
+    for (const user of new Set([
+      data.user_id,
+      ...(await reaction.users.fetch())
+        .array()
+        .filter((user) => !user.bot)
+        .map((user) => user.id),
+    ])) {
+      await channel.createOverwrite(user, {
+        VIEW_CHANNEL: true,
+      });
+    }
 
     await message.reply(`<#${createChannel.id}>`);
   } catch (e) {
