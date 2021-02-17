@@ -141,6 +141,8 @@ client.on("message", async (message) => {
 
         if (cmd.payload.type === "leave" && permission !== undefined) {
           await permission.delete();
+
+          await message.reply("権限を削除しました。");
         }
 
         if (cmd.payload.type === "join") {
@@ -153,6 +155,8 @@ client.on("message", async (message) => {
               VIEW_CHANNEL: true,
             });
           }
+
+          await message.reply("権限を付与しました。");
         }
       }
     }
