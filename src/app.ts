@@ -118,6 +118,11 @@ client.on("message", async (message) => {
     if (cmd.payload.type === "create") {
       await message.react("👍");
     } else if (cmd.payload.type === "list") {
+      await message.reply(
+        filterManageChannel(cmd.category.children.array())
+          .map((channel, i) => `${i}: ${channel.name}`)
+          .join("\n")
+      );
     } else {
       const channelQuery = cmd.payload.channels;
       const channels = filterManageChannel(
