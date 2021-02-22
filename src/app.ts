@@ -71,7 +71,7 @@ function msgToCmd(message: Discord.Message): Cmd | null {
   } else if (cmds.length === 1) {
     payload = {
       type: "create",
-      name: cmds[0],
+      name: cmds[0].toLocaleLowerCase(),
     };
   }
 
