@@ -11,3 +11,5 @@ RUN npm i
 COPY . $HOME
 
 RUN npm run build
+
+CMD ["node", "dist/app.js"]
