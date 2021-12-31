@@ -1,5 +1,6 @@
 import * as Discord from "discord.js";
 import * as fs from "fs";
+import * as path from "path";
 
 type CmdPayload =
   | {
@@ -252,5 +253,9 @@ client.on("raw" as any, async (packet) => {
 });
 
 client.login(
-  JSON.parse(fs.readFileSync("config.json", { encoding: "utf8" })).token
+  JSON.parse(
+    fs.readFileSync(path.join(process.env["CONFIG_DIR"] ?? "", "config.json"), {
+      encoding: "utf8",
+    })
+  ).token
 );
