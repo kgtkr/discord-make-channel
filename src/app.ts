@@ -43,11 +43,11 @@ function msgToCmd(message: Discord.Message): Cmd | null {
     return null;
   }
 
-  const [expectMention, ...cmds] = arr;
+  const [prefix, ...cmds] = arr;
 
-  const botMention = `<@!${botUser.id}>`;
+  const expectPrefix = "mc";
 
-  if (expectMention !== botMention) {
+  if (prefix !== expectPrefix) {
     return null;
   }
 
