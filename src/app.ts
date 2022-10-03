@@ -1,6 +1,17 @@
 import * as Discord from "discord.js";
-import * as fs from "fs";
-import * as path from "path";
+
+function getEnv(key: string, defaultValue?: string): string {
+  const value = process.env[key];
+  if (value === undefined) {
+    if (defaultValue === undefined) {
+      throw new Error(`Environment variable "${key}" is not defined.`);
+    }
+    return defaultValue;
+  }
+  return value;
+}
+
+const token = getEnv("DISCORD_TOKEN");
 
 type CmdPayload =
   | {
@@ -104,7 +115,9 @@ function filterManageChannel(
     .filter((x): x is Discord.TextChannel => x !== null);
 }
 
-const client = new Discord.Client();
+const client = new Discord.Client({
+  intents: ["GuildMessageReactions", "GuildMessages"],
+});
 
 client.on("ready", () => {});
 
@@ -121,23 +134,25 @@ client.on("message", async (message) => {
     } else if (cmd.payload.type === "list") {
       await message.reply(
         "\n" +
-          filterManageChannel(cmd.category.children.array())
+          filterManageChannel([...cmd.category.children.cache.values()])
             .map((channel, i) => `${i}: ${channel.name}`)
             .join("\n")
       );
     } else {
       const channelQuery = cmd.payload.channels;
-      const channels = filterManageChannel(
-        cmd.category.children.array()
-      ).filter((channel, i) =>
+      const channels = filterManageChannel([
+        ...cmd.category.children.cache.values(),
+      ]).filter((channel, i) =>
         channelQuery.some((query) =>
           typeof query === "number" ? i === query : channel.name.includes(query)
         )
       );
 
       for (const channel of new Set(channels)) {
-        const permission = channel.permissionOverwrites.find(
-          (x) => x.type === "member" || x.id === message.author.id
+        const permission = channel.permissionOverwrites.cache.find(
+          (x) =>
+            x.type === Discord.OverwriteType.Member ||
+            x.id === message.author.id
         );
 
         if (cmd.payload.type === "leave" && permission !== undefined) {
@@ -146,12 +161,12 @@ client.on("message", async (message) => {
 
         if (cmd.payload.type === "join") {
           if (permission === undefined) {
-            await channel.createOverwrite(message.author.id, {
-              VIEW_CHANNEL: true,
+            await channel.permissionOverwrites.create(message.author.id, {
+              ViewChannel: true,
             });
           } else {
-            await channel.updateOverwrite(message.author.id, {
-              VIEW_CHANNEL: true,
+            await channel.permissionOverwrites.edit(message.author.id, {
+              ViewChannel: true,
             });
           }
         }
@@ -187,7 +202,9 @@ client.on("raw" as any, async (packet) => {
       return;
     }
 
-    const channel = await client.channels.fetch(data.channel_id, true);
+    const channel = await client.channels.fetch(data.channel_id, {
+      force: true,
+    });
 
     if (!(channel instanceof Discord.TextChannel)) {
       return;
@@ -201,9 +218,9 @@ client.on("raw" as any, async (packet) => {
     }
     const cmdPayload = cmd.payload;
 
-    const reaction = message.reactions.cache
-      .array()
-      .find((reaction) => reaction.emoji.name === "👍");
+    const reaction = message.reactions.cache.find(
+      (reaction) => reaction.emoji.name === "👍"
+    );
 
     if (reaction === undefined) {
       return;
@@ -213,49 +230,52 @@ client.on("raw" as any, async (packet) => {
       return;
     }
 
-    const already = channel.guild.channels.cache
-      .array()
-      .find((channel) => channel.name === cmdPayload.name);
+    const already = channel.guild.channels.cache.find(
+      (channel) => channel.name === cmdPayload.name
+    );
 
     if (already !== undefined) {
       return;
     }
 
-    const createChannel = await channel.guild.channels.create(cmdPayload.name, {
-      type: "text",
+    const createChannel = await channel.guild.channels.create({
+      type: Discord.ChannelType.GuildText,
+      name: cmdPayload.name,
       parent: cmd.category,
     });
 
-    await createChannel.createOverwrite(client.user!.id, {
-      VIEW_CHANNEL: true,
+    await createChannel.permissionOverwrites.create(client.user!.id, {
+      ViewChannel: true,
     });
 
-    await createChannel.updateOverwrite(channel.guild.roles.everyone, {
-      VIEW_CHANNEL: false,
-    });
+    await createChannel.permissionOverwrites.edit(
+      channel.guild.roles.everyone,
+      {
+        ViewChannel: false,
+      }
+    );
 
-    for (const user of new Set([
-      data.user_id,
-      ...(await reaction.users.fetch())
-        .array()
-        .filter((user) => !user.bot)
-        .map((user) => user.id),
-    ])) {
-      await createChannel.createOverwrite(user, {
-        VIEW_CHANNEL: true,
+    const approveUsers = (await reaction.users.fetch())
+      .filter((user) => !user.bot)
+      .map((user) => user.id)
+      .filter((id) => id !== data.user_id);
+
+    for (const user of new Set([data.user_id, ...approveUsers])) {
+      await createChannel.permissionOverwrites.create(user, {
+        ViewChannel: true,
       });
     }
 
-    await message.reply(`<#${createChannel.id}>`);
+    await message.reply(
+      `Created: <#${createChannel.id}> (by <@${
+        data.user_id
+      }>, and approved by <@${approveUsers
+        .map((userId) => `<@${userId}>`)
+        .join(", ")}>)`
+    );
   } catch (e) {
     console.log(e);
   }
 });
 
-client.login(
-  JSON.parse(
-    fs.readFileSync(path.join(process.env["CONFIG_DIR"] ?? "", "config.json"), {
-      encoding: "utf8",
-    })
-  ).token
-);
+client.login(JSON.parse(token));

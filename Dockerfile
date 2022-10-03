@@ -1,14 +1,16 @@
-FROM node:16.17-alpine
+FROM --platform=$BUILDPLATFORM node:16.17.0-slim as build
 
-ENV HOME=/home/app
+WORKDIR /workdir
 
-WORKDIR $HOME
-
-COPY package.json package-lock.json $HOME/
+COPY package.json package-lock.json ./
 RUN npm ci
-
-COPY . $HOME
-
+COPY . .
 RUN npm run build
 
-CMD ["node", "dist/app.js"]
+FROM node:16.17.0-alpine
+
+WORKDIR /workdir
+
+COPY --from=build /workdir/dist/app.js ./
+
+CMD ["node", "app.js"]
