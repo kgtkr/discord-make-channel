@@ -285,4 +285,4 @@ client.on("raw" as any, async (packet) => {
   }
 });
 
-client.login(JSON.parse(token));
+client.login(token);
