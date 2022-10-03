@@ -20,9 +20,9 @@ type CmdPayload =
     }
   | {
       type: "join";
-      channels: Array<number | string>;
+      channels: Array<number | string | null>;
     }
-  | { type: "leave"; channels: Array<number | string> }
+  | { type: "leave"; channels: Array<number | string | null> }
   | { type: "list" };
 
 type Cmd = {
@@ -68,6 +68,9 @@ function msgToCmd(message: Discord.Message): Cmd | null {
     payload = {
       type: cmds[0],
       channels: cmds.slice(1).map((x) => {
+        if (x === "*") {
+          return null;
+        }
         const n = Number.parseInt(x);
         if (Number.isNaN(n)) {
           return x;
@@ -144,7 +147,11 @@ client.on("message", async (message) => {
         ...cmd.category.children.cache.values(),
       ]).filter((channel, i) =>
         channelQuery.some((query) =>
-          typeof query === "number" ? i === query : channel.name.includes(query)
+          query === null
+            ? true
+            : typeof query === "number"
+            ? i === query
+            : channel.name.includes(query)
         )
       );
 
