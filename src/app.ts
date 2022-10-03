@@ -119,12 +119,17 @@ function filterManageChannel(
 }
 
 const client = new Discord.Client({
-  intents: ["GuildMessageReactions", "GuildMessages"],
+  intents: [
+    "GuildMessageReactions",
+    "GuildMessages",
+    "Guilds",
+    "MessageContent",
+  ],
 });
 
 client.on("ready", () => {});
 
-client.on("message", async (message) => {
+client.on("messageCreate", async (message) => {
   try {
     const cmd = msgToCmd(message);
 
@@ -265,7 +270,7 @@ client.on("raw" as any, async (packet) => {
     const approveUsers = (await reaction.users.fetch())
       .filter((user) => !user.bot)
       .map((user) => user.id)
-      .filter((id) => id !== data.user_id);
+      .filter((id) => id !== message.author.id);
 
     for (const user of new Set([data.user_id, ...approveUsers])) {
       await createChannel.permissionOverwrites.create(user, {
@@ -275,8 +280,8 @@ client.on("raw" as any, async (packet) => {
 
     await message.reply(
       `Created: <#${createChannel.id}> (by <@${
-        data.user_id
-      }>, and approved by <@${approveUsers
+        message.author.id
+      }>, and approved by ${approveUsers
         .map((userId) => `<@${userId}>`)
         .join(", ")}>)`
     );
